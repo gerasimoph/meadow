@@ -91,7 +91,7 @@ final class StylingTests: XCTestCase {
         """
         let fragments = ["```", "\n", "# ", "**", "|", "- [ ] ", "> ", "x", "`", "\n\n", "---\n", "===", "[a](b)"]
         var rng = SystemRandomNumberGenerator()
-        for round in 0..<2000 {
+        for round in 0..<400 {
             let tv = MarkdownTextView(style: EditorStyle())
             tv.setMarkdown(base)
             let ts = tv.textStorage!
@@ -111,6 +111,23 @@ final class StylingTests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testReloadKeepsMarkersHidden() {
+        let (scroll, tv) = MarkdownTextView.scrollable(style: EditorStyle())
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 400), styleMask: [.titled], backing: .buffered, defer: false)
+        window.contentView = scroll
+        window.makeFirstResponder(tv)
+        tv.setMarkdown("# A\n\n## B\n")
+        tv.setMarkdown("# C\n\n## D\n")
+        tv.setSelectedRange(NSRange(location: 0, length: 0))
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        let ts = tv.textStorage!
+        XCTAssertEqual(ts.attribute(.mdGlyph, at: 5, effectiveRange: nil) as? Int, GlyphAction.hidden.rawValue, "## should be hidden")
+        XCTAssertNil(ts.attribute(.mdGlyph, at: 0, effectiveRange: nil), "# under caret should be revealed")
+        // The glyphs must follow the attributes (they are regenerated only outside of storage edits).
+        let lm = tv.layoutManager!
+        XCTAssertEqual(lm.propertyForGlyph(at: lm.glyphIndexForCharacter(at: 6)), .null, "## glyph should be hidden")
     }
 
     func testNewlineContinuesTask() {

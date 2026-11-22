@@ -110,9 +110,11 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
     public func setMarkdown(_ text: String, selection: NSRange? = nil) {
         guard let ts = textStorage else { return }
         styler.revealed = []
+        isLoadingDocument = true
         ts.beginEditing()
         ts.replaceCharacters(in: NSRange(location: 0, length: ts.length), with: text)
         ts.endEditing()
+        isLoadingDocument = false
         undoManager?.removeAllActions(withTarget: ts)
         let sel = selection.map { NSRange(location: min($0.location, ts.length), length: 0) } ?? NSRange(location: 0, length: 0)
         setSelectedRange(sel)
@@ -168,7 +170,7 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
         }
         dirty = NSUnionRange(dirty, NSRange(location: dirty.location, length: max(0, end - dirty.location)))
         dirty = NSIntersectionRange(dirty, NSRange(location: 0, length: textStorage.length))
-        if wantsReveal {
+        if wantsReveal && !isLoadingDocument {
             styler.revealed = new.leaves(touching: editedRange)
         } else {
             styler.revealed = []
@@ -176,13 +178,17 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
         styler.apply(dirty, to: textStorage)
     }
 
+    private var isLoadingDocument = false
+
     private var wantsReveal: Bool { !isPreview && window?.firstResponder === self }
 
     /// Shows markers in the leaf blocks under the selection and hides them elsewhere.
     public func updateReveal() {
         guard let ts = textStorage else { return }
         let a = styler.analysis
-        guard a.length == ts.length else {
+        // NSTextView adjusts the selection while the storage is still processing an edit;
+        // attribute changes made then are not turned into new glyphs, so wait for the edit to finish.
+        guard a.length == ts.length, ts.editedMask.isEmpty else {
             DispatchQueue.main.async { [weak self] in self?.updateReveal() }
             return
         }
