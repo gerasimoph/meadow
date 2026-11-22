@@ -20,6 +20,7 @@ let package = Package(
         ),
         .executableTarget(name: "mdprobe", dependencies: ["MeadowKit"]),
         .executableTarget(name: "mdsnap", dependencies: ["MeadowKit"]),
+        .executableTarget(name: "mdbench", dependencies: ["MeadowKit"]),
         .testTarget(name: "MeadowKitTests", dependencies: ["MeadowKit"]),
     ]
 )

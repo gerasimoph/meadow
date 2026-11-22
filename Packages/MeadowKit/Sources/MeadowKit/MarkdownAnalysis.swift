@@ -167,9 +167,26 @@ private struct Builder {
     var nextLeaf: Int32 = 0
 
     init(text: String) {
-        bytes = Array(text.utf8)
-        u16 = Array(text.utf16)
-        result = MarkdownAnalysis(length: u16.count)
+        // Copy straight out of the (usually NSString-backed) storage: iterating a bridged
+        // String's views is several times slower than these bulk copies.
+        let ns = text as NSString
+        let length = ns.length
+        var units = [UInt16](repeating: 0, count: length)
+        units.withUnsafeMutableBufferPointer { ns.getCharacters($0.baseAddress!, range: NSRange(location: 0, length: length)) }
+        var utf8 = [UInt8]()
+        if length > 0 {
+            let cf = ns as CFString
+            var needed: CFIndex = 0
+            CFStringGetBytes(cf, CFRange(location: 0, length: length), CFStringBuiltInEncodings.UTF8.rawValue, 0x3F, false, nil, 0, &needed)
+            utf8 = [UInt8](repeating: 0, count: needed)
+            _ = utf8.withUnsafeMutableBufferPointer { buf in
+                CFStringGetBytes(cf, CFRange(location: 0, length: length), CFStringBuiltInEncodings.UTF8.rawValue, 0x3F, false,
+                                 buf.baseAddress, needed, nil)
+            }
+        }
+        bytes = utf8
+        u16 = units
+        result = MarkdownAnalysis(length: length)
     }
 
     // MARK: Lines

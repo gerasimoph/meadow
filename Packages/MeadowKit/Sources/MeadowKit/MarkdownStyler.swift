@@ -88,6 +88,9 @@ public final class MarkdownStyler {
         spaceWidth = (" " as NSString).size(withAttributes: [.font: baseFont]).width
         checkboxWidth = max(spaceWidth * 2, (size * 1.05).rounded()) + spaceWidth * 0.5
         traitCache.removeAll()
+        paragraphCache.removeAll()
+        widthCache.removeAll()
+        advanceCache.removeAll()
         let ps = NSMutableParagraphStyle()
         ps.lineHeightMultiple = style.lineHeight
         bodyParagraph = ps
@@ -112,8 +115,39 @@ public final class MarkdownStyler {
         guard range.length > 0 else { return }
         storage.setAttributes(baseAttributes, range: range)
 
+        // Style in ascending chunks of whole lines. NSAttributedString keeps attribute runs in an
+        // array, so inserting runs in front of many existing ones is O(n) each; doing every pass
+        // per chunk keeps the runs after the insertion point few (1 MB: 710 ms -> tens of ms).
         let firstLine = a.lineIndex(at: range.location)
         let lastLine = a.lineIndex(at: max(range.location, NSMaxRange(range) - 1))
+        var chunkStart = firstLine
+        while chunkStart <= lastLine {
+            var chunkEnd = chunkStart
+            var chars = 0
+            while chunkEnd < lastLine, chars < 4096 {
+                chars += a.lines[chunkEnd].next - a.lines[chunkEnd].start
+                chunkEnd += 1
+            }
+            // Never split a code block or a table between chunks.
+            let ln = a.lines[chunkEnd]
+            if ln.block >= 0 {
+                switch ln.kind {
+                case .fence, .code:
+                    if Int(ln.block) < a.codeBlocks.count { chunkEnd = max(chunkEnd, min(lastLine, a.codeBlocks[Int(ln.block)].lastLine)) }
+                case .tableHeader, .tableDelimiter, .tableRow:
+                    if Int(ln.block) < a.tables.count { chunkEnd = max(chunkEnd, min(lastLine, a.tables[Int(ln.block)].lastLine)) }
+                default: break
+                }
+            }
+            applyLines(chunkStart...chunkEnd, storage)
+            chunkStart = chunkEnd + 1
+        }
+    }
+
+    private func applyLines(_ lines: ClosedRange<Int>, _ storage: NSTextStorage) {
+        let a = analysis
+        let firstLine = lines.lowerBound, lastLine = lines.upperBound
+        let range = NSRange(location: a.lines[firstLine].start, length: a.lines[lastLine].next - a.lines[firstLine].start)
         let theme = style.theme
 
         // Line-level attributes.
@@ -141,7 +175,7 @@ public final class MarkdownStyler {
             }
         }
 
-        // Spans.
+        // Spans that start in these lines.
         var i = a.firstSpanIndex(atOrAfter: range.location)
         let end = NSMaxRange(range)
         while i < a.spans.count, a.spans[i].range.location < end {
@@ -149,7 +183,7 @@ public final class MarkdownStyler {
             i += 1
         }
 
-        // Tables (whole tables are always inside the range: they are single leaves).
+        // Tables (chunks never split them; they are single leaves).
         var doneTables = Set<Int32>()
         for li in firstLine...lastLine {
             let ln = a.lines[li]
@@ -265,75 +299,142 @@ public final class MarkdownStyler {
 
     private func quoteIndent(_ depth: UInt8) -> CGFloat { CGFloat(depth) * quoteStep }
 
-    private func applyParagraphStyle(_ ln: MDLine, _ s: NSTextStorage) {
-        let ps = NSMutableParagraphStyle()
-        ps.setParagraphStyle(bodyParagraph)
-        let qi = quoteIndent(ln.quoteDepth)
-        let revealedLeaf = isRevealed(ln.leaf)
+    /// Everything that determines a line's paragraph style; equal keys share one style object
+    /// (fewer allocations, and equal neighbours merge into one attribute run).
+    private struct ParagraphKey: Hashable {
+        var kind: MDLine.Kind
+        var level: UInt8
+        var quote: UInt8
+        var indent: CGFloat
+        var revealed: Bool
+        var blank: Bool
+        var imageHeight: CGFloat
+    }
 
-        // Hanging indent: width of the visible prefix (whitespace, bullets, task boxes).
+    private var paragraphCache: [ParagraphKey: NSParagraphStyle] = [:]
+
+    private func applyParagraphStyle(_ ln: MDLine, _ s: NSTextStorage) {
+        let revealedLeaf = isRevealed(ln.leaf)
+        var key = ParagraphKey(kind: ln.kind, level: ln.headingLevel, quote: ln.quoteDepth, indent: 0,
+                               revealed: false, blank: ln.end == ln.start, imageHeight: 0)
+        switch ln.kind {
+        case .fence, .setextUnderline, .tableDelimiter: key.revealed = revealedLeaf
+        case .body: key.revealed = key.blank && revealedLeaf
+        default: break
+        }
+        if ln.kind == .body || ln.kind == .heading || ln.kind == .image {
+            key.indent = prefixWidth(ln, s)
+        }
+        if ln.kind == .image, let info = s.attribute(.mdImage, at: ln.start, effectiveRange: nil) as? MDImageInfo {
+            key.imageHeight = info.size.height
+        }
+        let ps: NSParagraphStyle
+        if let cached = paragraphCache[key] {
+            ps = cached
+        } else {
+            ps = makeParagraphStyle(key)
+            paragraphCache[key] = ps
+        }
+        s.addAttribute(.paragraphStyle, value: ps, range: ln.fullRange)
+    }
+
+    /// Width of the visible line prefix (indentation, bullets, task boxes) for the hanging indent.
+    private func prefixWidth(_ ln: MDLine, _ s: NSTextStorage) -> CGFloat {
+        guard ln.end > ln.start else { return 0 }
+        let str = s.string as NSString
+        let first = str.character(at: ln.start)
+        // Fast path for ordinary lines: no leading whitespace and no marker.
+        if first != 32, first != 9, s.attribute(.mdPrefix, at: ln.start, effectiveRange: nil) == nil,
+           s.attribute(.mdGlyph, at: ln.start, effectiveRange: nil) == nil {
+            return 0
+        }
         var x: CGFloat = 0
         var p = ln.start
         var runStart = -1
-        let str = s.string as NSString
         func flushRun(_ upTo: Int) {
             if runStart >= 0, upTo > runStart {
                 let sub = str.substring(with: NSRange(location: runStart, length: upTo - runStart))
                 let f = (s.attribute(.font, at: runStart, effectiveRange: nil) as? NSFont) ?? baseFont
-                x += (sub as NSString).size(withAttributes: [.font: f]).width
+                x += width(of: sub, font: f)
             }
             runStart = -1
         }
-        if ln.kind == .body || ln.kind == .heading || ln.kind == .image {
-            while p < ln.end {
-                let c = str.character(at: p)
-                let action = (s.attribute(.mdGlyph, at: p, effectiveRange: nil) as? Int).flatMap(GlyphAction.init)
-                let isPrefix = s.attribute(.mdPrefix, at: p, effectiveRange: nil) != nil
-                if action == .hidden { flushRun(p); p += 1; continue }
-                if action == .checkbox { flushRun(p); x += checkboxWidth; p += 1; continue }
-                if isPrefix || c == 32 || c == 9 {
-                    if runStart < 0 { runStart = p }
-                    p += 1
-                    continue
-                }
-                break
+        while p < ln.end {
+            let c = str.character(at: p)
+            let action = (s.attribute(.mdGlyph, at: p, effectiveRange: nil) as? Int).flatMap(GlyphAction.init)
+            let isPrefix = s.attribute(.mdPrefix, at: p, effectiveRange: nil) != nil
+            if action == .hidden { flushRun(p); p += 1; continue }
+            if action == .checkbox { flushRun(p); x += checkboxWidth; p += 1; continue }
+            if isPrefix || c == 32 || c == 9 {
+                if runStart < 0 { runStart = p }
+                p += 1
+                continue
             }
-            flushRun(p)
+            break
         }
-        ps.firstLineHeadIndent = qi
-        ps.headIndent = qi + x
+        flushRun(p)
+        return x
+    }
 
-        switch ln.kind {
+    private func makeParagraphStyle(_ key: ParagraphKey) -> NSParagraphStyle {
+        let ps = NSMutableParagraphStyle()
+        ps.setParagraphStyle(bodyParagraph)
+        let qi = quoteIndent(key.quote)
+        ps.firstLineHeadIndent = qi
+        ps.headIndent = qi + key.indent
+        switch key.kind {
         case .heading:
             ps.lineHeightMultiple = 1.2
-            ps.paragraphSpacingBefore = style.fontSize * (ln.headingLevel <= 2 ? 0.7 : 0.4)
+            ps.paragraphSpacingBefore = style.fontSize * (key.level <= 2 ? 0.7 : 0.4)
         case .fence:
             ps.firstLineHeadIndent = qi + 12
             ps.headIndent = qi + 12
             ps.lineHeightMultiple = 1.2
-            if !revealedLeaf { collapse(ps, to: style.fontSize * 0.55) }
+            if !key.revealed { collapse(ps, to: style.fontSize * 0.55) }
         case .code:
             ps.firstLineHeadIndent = qi + 12
             ps.headIndent = qi + 12
             ps.tailIndent = -12
             ps.lineHeightMultiple = 1.3
         case .setextUnderline:
-            if !revealedLeaf { collapse(ps, to: 2) }
+            if !key.revealed { collapse(ps, to: 2) }
         case .tableDelimiter:
-            if !revealedLeaf { collapse(ps, to: style.fontSize * 0.5) }
+            if !key.revealed { collapse(ps, to: style.fontSize * 0.5) }
         case .tableHeader, .tableRow:
             ps.lineHeightMultiple = max(1.4, style.lineHeight)
         case .rule:
             break
         case .image:
-            if let info = s.attribute(.mdImage, at: ln.start, effectiveRange: nil) as? MDImageInfo {
-                ps.paragraphSpacingBefore = info.size.height + 6
-            }
+            if key.imageHeight > 0 { ps.paragraphSpacingBefore = key.imageHeight + 6 }
         default:
             // Blank lines separate blocks; keep them shorter than text lines.
-            if ln.end == ln.start, !revealedLeaf { collapse(ps, to: (style.fontSize * style.lineHeight * 0.7).rounded()) }
+            if key.blank, !key.revealed { collapse(ps, to: (style.fontSize * style.lineHeight * 0.7).rounded()) }
         }
-        s.addAttribute(.paragraphStyle, value: ps, range: ln.fullRange)
+        return ps.copy() as! NSParagraphStyle
+    }
+
+    // MARK: Text measurement
+
+    private struct WidthKey: Hashable { let text: String; let font: NSFont }
+    private var widthCache: [WidthKey: CGFloat] = [:]
+    private var advanceCache: [NSFont: CGFloat] = [:]
+
+    /// Width of `text` in `font`; ASCII in a fixed-pitch font is computed from the advance.
+    private func width(of text: String, font: NSFont) -> CGFloat {
+        if font.isFixedPitch, text.utf16.allSatisfy({ $0 < 0x80 && $0 != 9 }) {
+            let advance: CGFloat
+            if let a = advanceCache[font] { advance = a } else {
+                advance = ("0" as NSString).size(withAttributes: [.font: font]).width
+                advanceCache[font] = advance
+            }
+            return advance * CGFloat(text.utf16.count)
+        }
+        let key = WidthKey(text: text, font: font)
+        if let w = widthCache[key] { return w }
+        let w = (text as NSString).size(withAttributes: [.font: font]).width
+        if widthCache.count > 4096 { widthCache.removeAll() }
+        widthCache[key] = w
+        return w
     }
 
     private func collapse(_ ps: NSMutableParagraphStyle, to height: CGFloat) {
@@ -388,10 +489,12 @@ public final class MarkdownStyler {
     /// Width of a cell's visible text (hidden markers excluded).
     private func measureVisible(_ r: NSRange, _ s: NSTextStorage, _ str: NSString) -> CGFloat {
         var w: CGFloat = 0
-        s.enumerateAttributes(in: r) { attrs, sub, _ in
-            if (attrs[.mdGlyph] as? Int) == GlyphAction.hidden.rawValue { return }
-            let f = (attrs[.font] as? NSFont) ?? baseFont
-            w += str.substring(with: sub).size(withAttributes: [.font: f]).width
+        s.enumerateAttribute(.font, in: r) { value, fontRun, _ in
+            let f = (value as? NSFont) ?? baseFont
+            s.enumerateAttribute(.mdGlyph, in: fontRun) { glyph, sub, _ in
+                if (glyph as? Int) == GlyphAction.hidden.rawValue { return }
+                w += width(of: str.substring(with: sub), font: f)
+            }
         }
         return ceil(w)
     }
