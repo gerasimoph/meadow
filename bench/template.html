@@ -1,0 +1,192 @@
+<title>Скорость Meadow</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<style>
+/* Layout: one narrow column of metric cards, like a release benchmark sheet; Meadow is the green bar. */
+:root {
+  --bg: #f4f6f0;
+  --surface: #ffffff;
+  --fg: #1c2318;
+  --muted: #66705f;
+  --rule: #dde2d5;
+  --accent: #3d7a2b;
+  --accent-soft: #e3eedb;
+  --bar: #c7cfbf;
+  --loss: #9a5b1f;
+  --font-text: "Onest", -apple-system, "Segoe UI", sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161c14; --surface: #1e261b; --fg: #e4e8dc; --muted: #8d9886; --rule: #313d2c;
+    --accent: #a9d18e; --accent-soft: #2a3a24; --bar: #3d4a37; --loss: #e0a96a; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161c14; --surface: #1e261b; --fg: #e4e8dc; --muted: #8d9886; --rule: #313d2c;
+  --accent: #a9d18e; --accent-soft: #2a3a24; --bar: #3d4a37; --loss: #e0a96a; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-text); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 48px 64px;
+}
+.wrap { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+header { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+h1 { font-size: clamp(30px, 6vw, 44px); line-height: 1.1; margin: 0; font-weight: 700; text-wrap: balance; letter-spacing: -.01em; }
+.lede { color: var(--muted); max-width: 62ch; margin: 0; }
+.lineup { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.chip { font-size: 13px; border: 1px solid var(--rule); border-radius: 999px; padding: 3px 10px; color: var(--muted); background: var(--surface); }
+.chip b { color: var(--fg); font-weight: 600; }
+.chip.me { border-color: var(--accent); background: var(--accent-soft); }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 22px 22px 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.card h2 { font-size: 17px; margin: 0; font-weight: 600; text-wrap: balance; }
+.detail { color: var(--muted); font-size: 13.5px; margin: -8px 0 0; }
+.rank { font-family: var(--font-num); font-size: 12px; padding: 2px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+.rank.low { background: transparent; border: 1px solid var(--rule); color: var(--muted); }
+.headline { display: flex; flex-direction: column; gap: 2px; }
+.big { font-family: var(--font-num); font-weight: 700; font-size: clamp(34px, 7vw, 46px); line-height: 1; letter-spacing: -.02em; color: var(--accent); }
+.big.loss { color: var(--loss); }
+.big small { font-family: var(--font-text); font-size: 17px; font-weight: 500; color: var(--fg); letter-spacing: 0; margin-left: 8px; }
+.second { color: var(--muted); font-size: 14px; }
+.bars { display: grid; grid-template-columns: minmax(96px, max-content) 1fr minmax(84px, max-content); gap: 7px 12px; align-items: center; }
+.bars .name { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bars .name.me { font-weight: 600; }
+.track { height: 12px; border-radius: 4px; position: relative; min-width: 0; }
+.fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--bar); min-width: 3px; }
+.fill.me { background: var(--accent); }
+.val { font-family: var(--font-num); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.val.na { color: var(--muted); font-family: var(--font-text); font-size: 12.5px; text-align: left; white-space: normal; grid-column: 2 / 4; }
+.foot { font-size: 12.5px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.foot span::before { content: "· "; }
+.foot span:first-child::before { content: ""; }
+.notes { font-size: 12.5px; color: var(--muted); margin: -6px 0 0; padding-left: 18px; }
+section.method { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; color: var(--muted); font-size: 14px; }
+section.method h2 { color: var(--fg); font-size: 17px; margin: 0; }
+section.method ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+section.method code { font-family: var(--font-num); font-size: 12.5px; }
+@media (max-width: 480px) {
+  .bars { grid-template-columns: minmax(80px, max-content) 1fr minmax(70px, max-content); }
+  .card { padding: 18px 16px 14px; }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow" id="eyebrow">Замерено перед релизом</div>
+    <h1>Скорость Meadow</h1>
+    <p class="lede" id="lede"></p>
+    <div class="lineup" id="lineup"></div>
+  </header>
+  <div id="cards" style="display:flex;flex-direction:column;gap:20px"></div>
+  <section class="method" id="method"></section>
+</div>
+
+<script>
+const DATA = /*DATA*/null;
+const ME = "Meadow";
+const RIVAL = "Antigravity IDE";
+
+const nf = (v, d) => v.toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
+const ratioText = (r) => r >= 1.5 ? nf(r, r >= 10 ? 0 : 1) + "×" : "на " + nf((r - 1) * 100, 0) + "%";
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function compare(m, me, other) {
+  // Returns {text, win} for "Meadow vs other" on a lower-is-better metric.
+  if (me == null || other == null) return null;
+  if (me.value === 0 && other.value === 0) return { win: true, ratio: 1, text: "наравне" };
+  if (me.value <= other.value) {
+    const r = me.value === 0 ? Infinity : other.value / me.value;
+    return { win: true, ratio: r, text: (r === Infinity ? "∞" : ratioText(r)) };
+  }
+  const r = me.value / Math.max(other.value, 1e-9);
+  return { win: false, ratio: r, text: ratioText(r) };
+}
+
+function card(m) {
+  const rows = m.rows;
+  const valued = rows.filter(r => r.value != null).sort((a, b) => a.value - b.value);
+  const me = rows.find(r => r.app === ME);
+  const rank = valued.findIndex(r => r.app === ME) + 1;
+  const rival = rows.find(r => r.app === RIVAL && r.value != null) || valued.find(r => r.app !== ME);
+  const others = valued.filter(r => r.app !== ME && r !== rival);
+  const best = others[0];
+  const max = Math.max(...valued.map(r => r.value), 1e-9);
+
+  let headline = "";
+  const c1 = compare(m, me, rival);
+  if (c1) {
+    headline += `<div class="big ${c1.win ? "" : "loss"}">${c1.text}<small>${c1.win ? m.verb : m.anti} ${esc(rival.app)}</small></div>`;
+  }
+  const c2 = best ? compare(m, me, best) : null;
+  if (c2) headline += `<div class="second">${c2.text} ${c2.win ? m.verb : m.anti} ${esc(best.app)}</div>`;
+
+  const order = [...valued, ...rows.filter(r => r.value == null)];
+  const bars = order.map(r => {
+    const isMe = r.app === ME;
+    if (r.value == null) {
+      return `<div class="name ${isMe ? "me" : ""}">${esc(r.app)}</div><div class="val na">— ${esc(r.note || "нет данных")}</div>`;
+    }
+    const pct = Math.max(0.6, r.value / max * 100);
+    return `<div class="name ${isMe ? "me" : ""}">${esc(r.app)}</div>
+      <div class="track"><div class="fill ${isMe ? "me" : ""}" style="width:${pct}%"></div></div>
+      <div class="val">${nf(r.value, m.digits)} ${m.unit}</div>`;
+  }).join("");
+
+  const notes = rows.filter(r => r.value != null && r.note).map(r => `<li>${esc(r.app)}: ${esc(r.note)}</li>`).join("");
+  const runs = Math.max(...rows.map(r => r.runs || 0));
+  return `<article class="card" id="${m.id}">
+    <div class="card-top"><h2>${esc(m.title)}</h2>${rank ? `<span class="rank ${rank > 1 ? "low" : ""}">${ME} · ${rank} из ${valued.length}</span>` : ""}</div>
+    <p class="detail">${esc(m.detail)}</p>
+    <div class="headline">${headline}</div>
+    <div class="bars">${bars}</div>
+    ${notes ? `<ul class="notes">${notes}</ul>` : ""}
+    <div class="foot"><span>${m.unit}, меньше — лучше</span><span>${runs > 1 ? "медиана " + runs + " прогонов" : "один замер"}</span></div>
+  </article>`;
+}
+
+function keysCard(k) {
+  const max = Math.max(...k.map(r => r.p95));
+  const bars = k.map(r => `
+    <div class="name">${esc(r.label)}</div>
+    <div class="track"><div class="fill me" style="width:${Math.max(0.6, r.median / max * 100)}%"></div></div>
+    <div class="val">${nf(r.median, 2)} мс</div>`).join("");
+  const p95 = k.map(r => `${esc(r.label)}: p95 ${nf(r.p95, 2)} мс`).map(s => `<span>${s}</span>`).join("");
+  const small = k[0];
+  return `<article class="card" id="keys">
+    <div class="card-top"><h2>Нажатие клавиши → текст перестилизован</h2><span class="rank low">только Meadow</span></div>
+    <p class="detail">Вставка символа, разбор документа, перестилизация изменённых блоков и вёрстка видимой части. Внутренний замер, без задержки клавиатуры и экрана.</p>
+    <div class="headline"><div class="big">${nf(small.median, 2)}<small>мс на обычной заметке</small></div>
+    <div class="second">кадр при 120 Гц длится 8,3 мс</div></div>
+    <div class="bars">${bars}</div>
+    <div class="foot"><span>мс, меньше — лучше</span><span>медиана 300 нажатий</span>${p95}</div>
+  </article>`;
+}
+
+(function render() {
+  const d = DATA;
+  const mc = d.machine;
+  document.getElementById("eyebrow").textContent = `Замерено ${mc.date} · Meadow ${d.apps.find(a => a.name === ME).version}`;
+  document.getElementById("lede").textContent =
+    `Meadow против редакторов, которые уже стоят на этом Mac: Antigravity IDE (сейчас открывает .md по умолчанию), Xcode, TextEdit и Obsidian. ` +
+    `Каждое приложение закрыто перед замером и открывает одну и ту же заметку, как при двойном клике в Finder.`;
+  document.getElementById("lineup").innerHTML = d.apps.map(a =>
+    `<span class="chip ${a.name === ME ? "me" : ""}"><b>${esc(a.name)}</b> ${esc(a.version)}${a.skipped ? " · пропущен" : ""}</span>`).join("");
+  document.getElementById("cards").innerHTML = d.metrics.map(card).join("") + keysCard(d.keys);
+  document.getElementById("method").innerHTML = `
+    <h2>Как мерили</h2>
+    <ul>
+      <li>${esc(mc.hardware)}, macOS ${esc(mc.os)}. Во время замеров работали обычные фоновые приложения (терминал, браузер, ассистенты), поэтому разброс есть у всех одинаково.</li>
+      <li>Приложения запускались по очереди, прогон за прогоном, чтобы фоновый шум ложился на всех поровну. Перед каждым прогоном приложение закрывалось; дисковый кэш оставался тёплым.</li>
+      <li>«Окно на экране» — первое окно высотой от 200 pt в списке окон WindowServer (опрос каждые 2 мс). «Отрисовано» — момент последнего изменения картинки окна (ScreenCaptureKit, шаг около 30 мс): после него окно не меняется 1,5 с. Мигающий курсор и полоса прокрутки не учитываются.</li>
+      <li>Память — phys_footprint всех процессов, за которые отвечает приложение (у Electron это хелперы и рендереры), через 5 с после запуска. Процессор и пробуждения — за следующие 10 с без ввода, окно на экране.</li>
+      <li>Antigravity IDE и Xcode показывают Markdown как исходный текст в редакторе кода, TextEdit — как простой текст; Meadow отрисовывает заголовки, задачи и таблицы. Obsidian не открывает отдельные файлы и при запуске загружает своё хранилище. ${d.apps.filter(a => a.skipped).map(a => esc(a.name)).join(", ") ? esc(d.apps.filter(a => a.skipped).map(a => a.name).join(", ")) + " был открыт во время замеров, его не закрывали и не измеряли." : ""}</li>
+      <li>Прогонов: запуск и отрисовка — ${d.runs.small}, память и простой — ${d.runs.idle}, файл 1 МБ — ${d.runs.large}. Везде медиана. Код замеров: <code>bench/AppBench.swift</code>, <code>Packages/MeadowKit/Sources/mdbench</code>.</li>
+    </ul>`;
+})();
+</script>

@@ -125,10 +125,16 @@ func thumbnail(_ window: SCWindow) -> [UInt8]? {
     return ok ? pixels : nil
 }
 
+/// True when more than 0.3 % of the thumbnail changed (ignores the blinking caret). The rightmost
+/// strip is skipped: scroll bars resize while background layout measures a long document,
+/// which is not content being drawn.
 func differs(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+    let w = 160, h = 100, skip = 6
     var n = 0
-    for i in 0..<min(a.count, b.count) where abs(Int(a[i]) - Int(b[i])) > 10 { n += 1 }
-    return Double(n) / Double(a.count) > 0.003   // > 0.3 % of pixels: ignores the blinking caret
+    for y in 0..<h {
+        for x in 0..<(w - skip) where abs(Int(a[y * w + x]) - Int(b[y * w + x])) > 10 { n += 1 }
+    }
+    return Double(n) / Double((w - skip) * h) > 0.003
 }
 
 // MARK: - Runs

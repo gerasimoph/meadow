@@ -34,3 +34,7 @@ cd Packages/MeadowKit && swift test
   - `MarkdownTextView.swift` (+`Editing`) — редактор: проявление разметки под курсором, клики по задачам, списки по Enter/Tab.
 - `App/` — окно, боковая панель, автосохранение, FSEvents, настройки.
 - `QuickLook/` — расширение предпросмотра.
+
+## Лицензия
+
+MIT, см. [LICENSE](LICENSE).
