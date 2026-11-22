@@ -1,0 +1,5 @@
+[
+  {"label": "1 KB note", "median": 0.34, "p95": 0.98},
+  {"label": "42 KB note", "median": 1.18, "p95": 1.79},
+  {"label": "1 MB note", "median": 26.07, "p95": 27.16}
+]

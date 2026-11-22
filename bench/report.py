@@ -1,20 +1,29 @@
 #!/usr/bin/env python3
 """Builds the benchmark page (bench/results/benchmarks.html) from appbench JSON and mdbench output.
 
-Usage: bench/report.py <appbench.json> <keystrokes.json> <machine.json> <out.html>
+Usage: bench/report.py <appbench.json> <keystrokes.json> <machine.json> <template.html> <out.html> [large-rerun.json]
 """
 import json
 import statistics
 import sys
 
-app_path, keys_path, machine_path, out_path = sys.argv[1:5]
+app_path, keys_path, machine_path, template_path, out_path = sys.argv[1:6]
+large_path = sys.argv[6] if len(sys.argv) > 6 else None
 apps = json.load(open(app_path))
+if large_path:
+    # A separate re-run of the 1 MB note replaces the large-note runs of the apps it covers.
+    rerun = {a["name"]: a for a in json.load(open(large_path))}
+    for a in apps:
+        if a["name"] in rerun and rerun[a["name"]]["large"]:
+            a["large"] = rerun[a["name"]]["large"]
 keys = json.load(open(keys_path))
 machine = json.load(open(machine_path))
 
 NOTES = {
-    "Obsidian": "открывает своё хранилище, а не переданный файл",
-    "Logseq": "открывает свой граф, а не переданный файл",
+    "Obsidian": "opens its own vault, not the file it was given",
+}
+SIZE_NOTES = {
+    "TextEdit": "system app: its frameworks ship with macOS and are not counted",
 }
 NO_FILES = {"Obsidian", "Logseq"}
 
@@ -28,12 +37,13 @@ def collect(key, runs_key="small", skip_no_files=False):
     rows = []
     for a in apps:
         if a.get("skipped"):
-            rows.append({"app": a["name"], "value": None, "note": "был открыт у пользователя, пропущен"})
+            rows.append({"app": a["name"], "value": None, "note": "was open during the run, not measured"})
             continue
         if skip_no_files and a["name"] in NO_FILES:
-            rows.append({"app": a["name"], "value": None, "note": "не открывает отдельные файлы"})
+            rows.append({"app": a["name"], "value": None, "note": "can't open a standalone file"})
             continue
-        runs = [r.get(key) for r in a[runs_key]]
+        # A window faster than 50 ms means the previous instance was still on screen: invalid run.
+        runs = [r.get(key) for r in a[runs_key] if (r.get("window") or 0) >= 50]
         n = len([v for v in runs if v is not None])
         rows.append({"app": a["name"], "value": median(runs), "runs": n, "note": NOTES.get(a["name"])})
     return rows
@@ -41,53 +51,46 @@ def collect(key, runs_key="small", skip_no_files=False):
 
 metrics = [
     {
-        "id": "launch",
-        "title": "Холодный запуск → окно на экране",
-        "detail": "Заметка 1 КБ открывается из Finder при закрытом приложении",
-        "unit": "мс", "lower": True, "digits": 0, "verb": "быстрее", "anti": "медленнее",
+        "id": "launch", "title": "Cold launch → window on screen",
+        "detail": "A 1 KB note opened from Finder while the app is closed",
+        "unit": "ms", "digits": 0, "verb": "faster than", "anti": "slower than",
         "rows": collect("window"),
     },
     {
-        "id": "painted",
-        "title": "Холодный запуск → заметка отрисована",
-        "detail": "До последнего изменения окна: после этого кадра картинка стоит 1,5 с",
-        "unit": "мс", "lower": True, "digits": 0, "verb": "быстрее", "anti": "медленнее",
+        "id": "painted", "title": "Cold launch → note painted",
+        "detail": "Until the window stops changing: the frame after which nothing moves for 1.5 s",
+        "unit": "ms", "digits": 0, "verb": "faster than", "anti": "slower than",
         "rows": collect("painted"),
     },
     {
-        "id": "large",
-        "title": "Файл 1 МБ: запуск → отрисовано",
-        "detail": "Заметка на 1 МБ и 30 тысяч строк, тот же замер",
-        "unit": "мс", "lower": True, "digits": 0, "verb": "быстрее", "anti": "медленнее",
+        "id": "large", "title": "1 MB note: cold launch → painted",
+        "detail": "The same measurement with a 1 MB, 30,000-line note",
+        "unit": "ms", "digits": 0, "verb": "faster than", "anti": "slower than",
         "rows": collect("painted", "large", skip_no_files=True),
     },
     {
-        "id": "memory",
-        "title": "Память с открытой заметкой",
-        "detail": "phys_footprint всех процессов приложения (хелперы, WebKit), через 5 с после запуска",
-        "unit": "МБ", "lower": True, "digits": 0, "verb": "меньше памяти", "anti": "больше памяти",
+        "id": "memory", "title": "Memory with a note open",
+        "detail": "phys_footprint of every process the app owns (helpers, renderers, WebKit), 5 s after launch",
+        "unit": "MB", "digits": 0, "verb": "less memory than", "anti": "more memory than",
         "rows": collect("memoryMB"),
     },
     {
-        "id": "cpu",
-        "title": "Процессор в простое",
-        "detail": "Окно на экране, никакого ввода, 10 с; доля одного ядра",
-        "unit": "%", "lower": True, "digits": 2, "verb": "меньше CPU", "anti": "больше CPU",
+        "id": "cpu", "title": "Idle CPU",
+        "detail": "Window in view, no input, 10 s; share of one core",
+        "unit": "%", "digits": 2, "verb": "less CPU than", "anti": "more CPU than",
         "rows": collect("idleCPU"),
     },
     {
-        "id": "wakeups",
-        "title": "Пробуждения в простое",
-        "detail": "Прерывания, будящие процессор, за те же 10 с",
-        "unit": "/с", "lower": True, "digits": 1, "verb": "меньше пробуждений", "anti": "больше пробуждений",
+        "id": "wakeups", "title": "Idle wakeups",
+        "detail": "Interrupts that wake the CPU, over the same 10 s",
+        "unit": "/s", "digits": 1, "verb": "fewer wakeups than", "anti": "more wakeups than",
         "rows": collect("wakeups"),
     },
     {
-        "id": "size",
-        "title": "Размер приложения",
-        "detail": "Место на диске, которое занимает .app",
-        "unit": "МБ", "lower": True, "digits": 0, "verb": "меньше", "anti": "больше",
-        "rows": [{"app": a["name"], "value": a["sizeMB"], "runs": 1} for a in apps],
+        "id": "size", "title": "App size",
+        "detail": "Disk space taken by the .app bundle",
+        "unit": "MB", "digits": 0, "verb": "smaller than", "anti": "larger than",
+        "rows": [{"app": a["name"], "value": a["sizeMB"], "runs": 1, "note": SIZE_NOTES.get(a["name"])} for a in apps],
     },
 ]
 
@@ -101,6 +104,6 @@ data = {
     "machine": machine,
 }
 
-template = open(__file__.replace("report.py", "template.html")).read()
+template = open(template_path).read()
 open(out_path, "w").write(template.replace("/*DATA*/null", json.dumps(data, ensure_ascii=False)))
 print("wrote", out_path)

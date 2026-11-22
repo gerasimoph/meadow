@@ -1,8 +1,8 @@
 # Meadow — notes for agents
 
 Native macOS Markdown notes editor (Swift 5, AppKit, TextKit 1, no SwiftUI/WebView).
-Project status and next steps live in the GitHub issues (pinned "📌 Статус проекта и что дальше").
-Issues are written in Russian.
+Project status and next steps live in the GitHub issues (pinned "📌 Project status and next steps").
+Issues are written in English.
 
 ## Commands
 - Generate project: `xcodegen generate` (the `.xcodeproj` is not committed).

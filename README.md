@@ -1,40 +1,56 @@
 # Meadow
 
-Простой, лёгкий и быстрый нативный Markdown-редактор заметок для macOS.
+A simple, light and fast native Markdown notes editor for macOS.
 
-- Заметки — обычные `.md` файлы в папке; боковая панель показывает папку как есть.
-- Живой предпросмотр: разметка (`#`, `**`, `[]()`, `|`) скрыта и появляется только в блоке под курсором.
-- Задачи `- [ ]` рисуются кружками и переключаются кликом; таблицы выравниваются по колонкам; подсветка кода.
-- Автосохранение, подхват изменений файлов извне, Quick Look для `.md` в Finder.
-- Swift + AppKit (TextKit 1), без WebView; парсер — `cmark-gfm`.
+![Meadow](site/img/hero-dark.png)
 
-## Сборка и установка
+- Notes are plain `.md` files in a folder; the sidebar shows the folder as it is.
+- Live preview: Markdown (`#`, `**`, `[]()`, `|`) is hidden and appears only in the block under the cursor.
+- `- [ ]` tasks are drawn as circles and toggled with a click; tables line up in columns; code is highlighted.
+- Autosave, picks up changes made by other apps, Quick Look for `.md` files in Finder.
+- Swift + AppKit (TextKit 1), no web view; parsing by `cmark-gfm`.
 
-Нужны Xcode и [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+Landing page with benchmarks: [`site/index.html`](site/index.html).
+
+## Speed
+
+Measured on a MacBook Pro (M4 Pro), medians; details and code in [`bench/`](bench/).
+
+| | Meadow | TextEdit | Antigravity IDE | Xcode | Obsidian |
+|---|---|---|---|---|---|
+| Cold launch → window | **311 ms** | 314 ms | 912 ms | 2,912 ms | 377 ms |
+| Memory with a note open | **47 MB** | 65 MB | 1,334 MB | 330 MB | 856 MB |
+
+## Build and install
+
+You need Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
 
 ```sh
-./scripts/install.sh        # Release-сборка в /Applications/Meadow.app
+./scripts/install.sh        # Release build into /Applications/Meadow.app
 ```
 
-Разработка:
+For development:
 
 ```sh
 xcodegen generate && open Meadow.xcodeproj
 cd Packages/MeadowKit && swift test
 ```
 
-Чтобы открывать `.md` двойным кликом: Finder → «Свойства» файла → «Открывать в программе» → Meadow → «Изменить всё».
+Set your own `DEVELOPMENT_TEAM` in `project.yml` to sign the app and its Quick Look extension.
 
-## Устройство
+To open `.md` files with a double-click: Finder → Get Info on a file → Open with → Meadow → Change All.
 
-- `Packages/MeadowKit` — движок редактора:
-  - `MarkdownAnalysis.swift` — разбор через `cmark-gfm` в строки, спаны и листовые блоки (UTF-16 смещения, обход известных ошибок позиций cmark);
-  - `MarkdownStyler.swift` — атрибуты текста по разбору; инкрементально, только изменённые блоки;
-  - `MarkdownLayoutManager.swift` — скрытие маркеров через глифы, кружки задач, выравнивание таблиц, фоны кода, цитаты;
-  - `MarkdownTextView.swift` (+`Editing`) — редактор: проявление разметки под курсором, клики по задачам, списки по Enter/Tab.
-- `App/` — окно, боковая панель, автосохранение, FSEvents, настройки.
-- `QuickLook/` — расширение предпросмотра.
+## How it is built
 
-## Лицензия
+- `Packages/MeadowKit` — the editor engine:
+  - `MarkdownAnalysis.swift` — parses with `cmark-gfm` into lines, spans and leaf blocks (UTF-16 offsets, works around known cmark position bugs);
+  - `MarkdownStyler.swift` — text attributes from the analysis, applied incrementally to changed blocks only;
+  - `MarkdownLayoutManager.swift` — hides markers at the glyph level, draws task circles, aligns tables, draws code backgrounds and quote bars;
+  - `MarkdownTextView.swift` (+`Editing`) — the editor: reveals Markdown under the cursor, toggles tasks, continues lists on Return and Tab.
+- `App/` — window, sidebar, autosave, FSEvents, settings.
+- `QuickLook/` — the preview extension.
+- `bench/` — the app benchmark and the landing page generator.
 
-MIT, см. [LICENSE](LICENSE).
+## License
+
+MIT, see [LICENSE](LICENSE).
