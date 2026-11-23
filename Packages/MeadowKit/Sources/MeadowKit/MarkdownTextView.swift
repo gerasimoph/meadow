@@ -159,6 +159,12 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
         let old = styler.analysis
         styler.reparse(textStorage.string)
         let new = styler.analysis
+        if styler.sourceLanguage != nil {
+            // Source files have no blocks; tokens stay within a line, so the edited lines are enough.
+            styler.revealed = []
+            styler.apply(editedRange, to: textStorage)
+            return
+        }
 
         // Start: earliest block (old or new) touching the edit. End: the first top-level block
         // boundary after the edit that exists in both parses; the text after it is unchanged,

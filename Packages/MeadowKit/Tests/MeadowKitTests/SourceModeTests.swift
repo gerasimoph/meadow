@@ -41,6 +41,25 @@ final class SourceModeTests: XCTestCase {
         XCTAssertNotEqual(color("\"count\""), EditorStyle().theme.text)
     }
 
+    /// Editing restyles only the edited lines; the result must match styling the whole file anew.
+    func testIncrementalEditsMatchFullRestyle() {
+        let tv = MarkdownTextView(style: EditorStyle())
+        tv.sourceLanguage = "json"
+        tv.setMarkdown(json)
+        let edits: [(Int, String)] = [(4, "\"new\": 1,\n  "), (30, "9"), (10, "\n"), (0, "[")]
+        for (at, insert) in edits {
+            tv.textStorage!.replaceCharacters(in: NSRange(location: min(at, tv.textStorage!.length), length: 0), with: insert)
+        }
+        let (_, fresh) = styled(tv.string, language: "json")
+        let ts = tv.textStorage!
+        for i in 0..<ts.length {
+            XCTAssertEqual(ts.attribute(.foregroundColor, at: i, effectiveRange: nil) as? NSColor,
+                           fresh.attribute(.foregroundColor, at: i, effectiveRange: nil) as? NSColor, "color at \(i)")
+            XCTAssertEqual(ts.attribute(.font, at: i, effectiveRange: nil) as? NSFont,
+                           fresh.attribute(.font, at: i, effectiveRange: nil) as? NSFont, "font at \(i)")
+        }
+    }
+
     func testSameTextAsMarkdownStillRendersMarkdown() {
         let (styler, _) = styled("# Title\n\n**bold**\n", language: nil)
         XCTAssertFalse(styler.analysis.spans.isEmpty)
