@@ -72,6 +72,7 @@ extension MarkdownTextView {
     }
 
     private var caretIsInCode: Bool {
+        if styler.sourceLanguage != nil { return true }
         let a = styler.analysis
         guard a.length == nsString.length, !a.lines.isEmpty else { return false }
         let kind = a.lines[a.lineIndex(at: selectedRange().location)].kind
@@ -262,7 +263,7 @@ extension MarkdownTextView {
         case #selector(toggleBold(_:)), #selector(toggleItalic(_:)), #selector(toggleStrikethrough(_:)),
              #selector(toggleInlineCode(_:)), #selector(insertLink(_:)), #selector(setHeadingLevel(_:)),
              #selector(toggleTask(_:)):
-            return isEditable
+            return isEditable && styler.sourceLanguage == nil
         default:
             return super.validateUserInterfaceItem(item)
         }

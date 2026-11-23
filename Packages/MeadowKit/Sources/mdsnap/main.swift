@@ -12,6 +12,7 @@ let (scroll, tv) = MarkdownTextView.scrollable(style: EditorStyle(theme: theme))
 let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
 window.contentView = scroll
 tv.baseURL = URL(fileURLWithPath: args[1]).deletingLastPathComponent()
+if ["json", "jsonc"].contains(URL(fileURLWithPath: args[1]).pathExtension.lowercased()) { tv.sourceLanguage = "json" }
 let t0 = Date()
 tv.setMarkdown(text)
 if args.count > 5 {

@@ -59,6 +59,9 @@ public final class MarkdownStyler {
     public var contentWidth: CGFloat = 640
     /// Loads images for block-image lines; nil disables images.
     public var imageLoader: ImageLoader?
+    /// When set, the text is source code in this language (e.g. "json"): no Markdown, just
+    /// monospaced text with syntax highlighting.
+    public var sourceLanguage: String?
 
     private(set) var baseFont: NSFont = .systemFont(ofSize: 15)
     private var codeFont: NSFont = .systemFont(ofSize: 15)
@@ -98,7 +101,7 @@ public final class MarkdownStyler {
     }
 
     public func reparse(_ text: String) {
-        analysis = MarkdownAnalyzer.analyze(text)
+        analysis = sourceLanguage == nil ? MarkdownAnalyzer.analyze(text) : MarkdownAnalyzer.lines(text)
     }
 
     /// Replaces the analysis without reparsing (used after an edit computes it).
@@ -149,6 +152,12 @@ public final class MarkdownStyler {
         let firstLine = lines.lowerBound, lastLine = lines.upperBound
         let range = NSRange(location: a.lines[firstLine].start, length: a.lines[lastLine].next - a.lines[firstLine].start)
         let theme = style.theme
+
+        if let language = sourceLanguage {
+            applySource(range, language: language, storage)
+            for li in firstLine...lastLine { applyParagraphStyle(a.lines[li], storage) }
+            return
+        }
 
         // Line-level attributes.
         var touchedCode = Set<Int32>()
@@ -501,6 +510,32 @@ public final class MarkdownStyler {
 
     // MARK: Code
 
+    /// Source files: whole lines in the code font, highlighted line by line. Tokens never span
+    /// lines in JSON (strings can't hold newlines), so restyling only the edited lines stays exact;
+    /// a `/* */` comment across lines in JSONC is the one case that may color a bit late.
+    private func applySource(_ r: NSRange, language: String, _ s: NSTextStorage) {
+        s.addAttribute(.font, value: codeFont, range: r)
+        guard r.length > 0 else { return }
+        let code = (s.string as NSString).substring(with: r)
+        let colors = style.theme.syntax
+        for token in SyntaxHighlighter.tokens(in: code, language: language) {
+            let tr = NSRange(location: r.location + token.range.location, length: token.range.length)
+            guard NSMaxRange(tr) <= NSMaxRange(r) else { continue }
+            s.addAttribute(.foregroundColor, value: color(for: token.kind, colors), range: tr)
+        }
+    }
+
+    private func color(for kind: CodeToken.Kind, _ colors: Theme.SyntaxColors) -> NSColor {
+        switch kind {
+        case .keyword: return colors.keyword
+        case .string: return colors.string
+        case .comment: return colors.comment
+        case .number: return colors.number
+        case .type: return colors.type
+        case .function: return colors.function
+        }
+    }
+
     private func highlight(_ block: MDCodeBlock, _ s: NSTextStorage) {
         let a = analysis
         guard !block.contentLines.isEmpty, !block.language.isEmpty else { return }
@@ -517,16 +552,7 @@ public final class MarkdownStyler {
         for token in SyntaxHighlighter.tokens(in: code, language: block.language) {
             let tr = NSRange(location: r.location + token.range.location, length: token.range.length)
             guard NSMaxRange(tr) <= NSMaxRange(r) else { continue }
-            let color: NSColor
-            switch token.kind {
-            case .keyword: color = colors.keyword
-            case .string: color = colors.string
-            case .comment: color = colors.comment
-            case .number: color = colors.number
-            case .type: color = colors.type
-            case .function: color = colors.function
-            }
-            s.addAttribute(.foregroundColor, value: color, range: tr)
+            s.addAttribute(.foregroundColor, value: color(for: token.kind, colors), range: tr)
         }
     }
 

@@ -29,6 +29,7 @@
 			<key>QLSupportedContentTypes</key>
 			<array>
 				<string>net.daringfireball.markdown</string>
+				<string>public.json</string>
 			</array>
 			<key>QLSupportsSearchableItems</key>
 			<false/>

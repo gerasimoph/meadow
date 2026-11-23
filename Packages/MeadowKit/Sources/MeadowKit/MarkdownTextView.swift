@@ -22,6 +22,20 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
         }
     }
 
+    /// Shows the document as source code in this language (e.g. "json") instead of Markdown.
+    /// Set it before `setMarkdown(_:)`; changing it on a loaded document restyles everything.
+    public var sourceLanguage: String? {
+        get { styler.sourceLanguage }
+        set {
+            guard newValue != styler.sourceLanguage else { return }
+            styler.sourceLanguage = newValue
+            guard let ts = textStorage, ts.length > 0 else { return }
+            styler.reparse(ts.string)
+            styler.revealed = []
+            restyleAll()
+        }
+    }
+
     /// Folder for resolving relative links and images.
     public var baseURL: URL? {
         get { styler.baseURL }

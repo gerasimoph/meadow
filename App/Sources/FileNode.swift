@@ -2,7 +2,13 @@ import Foundation
 
 /// A folder or note in the sidebar tree. Children are listed lazily.
 final class FileNode {
-    static let noteExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "txt"]
+    static let markdownExtensions: Set<String> = ["md", "markdown", "mdown", "mkd", "txt"]
+    /// Files shown as highlighted source instead of Markdown, by extension.
+    static let sourceLanguages: [String: String] = ["json": "json", "jsonc": "json"]
+    static let noteExtensions = markdownExtensions.union(sourceLanguages.keys)
+
+    /// Language to show `url` in as source code, or nil for Markdown.
+    static func sourceLanguage(for url: URL) -> String? { sourceLanguages[url.pathExtension.lowercased()] }
     private static let ignoredNames: Set<String> = ["node_modules", ".git"]
 
     var url: URL
@@ -16,8 +22,10 @@ final class FileNode {
         self.parent = parent
     }
 
-    /// Display name: folders as-is, files without extension.
-    var name: String { isFolder ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent }
+    /// Display name: notes without their extension; folders and other files (JSON) as they are.
+    var name: String {
+        isFolder || Self.sourceLanguage(for: url) != nil ? url.lastPathComponent : url.deletingPathExtension().lastPathComponent
+    }
 
     var isLoaded: Bool { loaded != nil }
 

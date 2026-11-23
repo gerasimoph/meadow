@@ -150,6 +150,13 @@ public enum MarkdownAnalyzer {
         builder.run()
         return builder.result
     }
+
+    /// Lines only, all plain body text: for files shown as source code (JSON) rather than Markdown.
+    public static func lines(_ text: String) -> MarkdownAnalysis {
+        var builder = Builder(text: text)
+        builder.buildLines()
+        return builder.result
+    }
 }
 
 private let kNewline: UInt16 = 10, kReturn: UInt16 = 13, kSpace: UInt16 = 32, kTab: UInt16 = 9

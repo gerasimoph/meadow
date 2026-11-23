@@ -26,6 +26,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         let dark = view.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         textView.style = EditorStyle(theme: dark ? .moss : .paper)
         textView.baseURL = url.deletingLastPathComponent()
+        textView.sourceLanguage = ["json", "jsonc"].contains(url.pathExtension.lowercased()) ? "json" : nil
         textView.setMarkdown(text)
         scrollToTop()
         handler(nil)

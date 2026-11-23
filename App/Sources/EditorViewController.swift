@@ -84,6 +84,12 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
             clear()
             return
         }
+        let language = FileNode.sourceLanguage(for: url)
+        if textView.sourceLanguage != language {
+            // Empty the view first so switching modes doesn't restyle the previous note.
+            load("")
+            textView.sourceLanguage = language
+        }
         currentURL = url
         encoding = enc
         load(text)
@@ -112,6 +118,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         currentURL = nil
         dirty = false
         lastText = ""
+        textView.sourceLanguage = nil
         load("")
         textView.baseURL = nil
         showEmptyState(true)
@@ -126,6 +133,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
             currentURL = URL(fileURLWithPath: new.path + cur.path.dropFirst(old.path.count))
         }
         textView.baseURL = currentURL?.deletingLastPathComponent()
+        // Renaming notes.md to data.json (or back) switches between Markdown and source view.
+        if let url = currentURL { textView.sourceLanguage = FileNode.sourceLanguage(for: url) }
     }
 
     // MARK: - Saving

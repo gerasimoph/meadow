@@ -8,6 +8,7 @@ A simple, light and fast native Markdown notes editor for macOS.
 - Live preview: Markdown (`#`, `**`, `[]()`, `|`) is hidden and appears only in the block under the cursor.
 - `- [ ]` tasks are drawn as circles and toggled with a click; tables line up in columns; code is highlighted.
 - Autosave, picks up changes made by other apps, Quick Look for `.md` files in Finder.
+- JSON files open too, as highlighted source (sidebar, Finder “Open With”, Quick Look).
 - Swift + AppKit (TextKit 1), no web view; parsing by `cmark-gfm`.
 
 Landing page with benchmarks: [`site/index.html`](site/index.html).

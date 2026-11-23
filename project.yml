@@ -46,6 +46,10 @@ targets:
             CFBundleTypeRole: Editor
             LSHandlerRank: Alternate
             LSItemContentTypes: [net.daringfireball.markdown]
+          - CFBundleTypeName: JSON Document
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.json]
           - CFBundleTypeName: Folder
             CFBundleTypeRole: Viewer
             LSHandlerRank: None
@@ -83,7 +87,7 @@ targets:
           NSExtensionAttributes:
             QLIsDataBasedPreview: false
             QLSupportsSearchableItems: false
-            QLSupportedContentTypes: [net.daringfireball.markdown]
+            QLSupportedContentTypes: [net.daringfireball.markdown, public.json]
     entitlements:
       path: QuickLook/QuickLook.entitlements
       properties:
