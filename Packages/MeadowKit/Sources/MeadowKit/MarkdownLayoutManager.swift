@@ -98,7 +98,10 @@ public final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelega
                               characterIndex charIndex: Int) -> NSRect {
         var width: CGFloat = 0
         if let ts = textStorage {
-            if let target = ts.attribute(.mdPipe, at: charIndex, effectiveRange: nil) as? NSNumber {
+            if ts.attribute(.mdPipeBreak, at: charIndex, effectiveRange: nil) != nil {
+                // Fill the rest of the line so the next cell starts on a line of its own.
+                width = max(proposedRect.maxX - glyphPosition.x, 0)
+            } else if let target = ts.attribute(.mdPipe, at: charIndex, effectiveRange: nil) as? NSNumber {
                 width = max(CGFloat(target.doubleValue) - glyphPosition.x, 6)
             } else if ts.attribute(.mdCheckbox, at: charIndex, effectiveRange: nil) != nil {
                 width = checkboxWidth
@@ -206,9 +209,24 @@ public final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelega
             let gr = glyphRange(forCharacterRange: r, actualCharacterRange: nil)
             guard gr.length > 0 else { return }
             let rect = lineFragmentRect(forGlyphAt: gr.location, effectiveRange: nil)
-            let y = info.strong ? rect.midY : rect.minY + 3
+            let y = info.strong ? rect.midY : rect.minY + info.top
             (info.strong ? theme.rule : theme.rule.withAlphaComponent(0.5)).setFill()
             NSRect(x: info.indent + origin.x, y: (y + origin.y).rounded() - 0.5, width: info.width, height: 1).fill()
+        }
+    }
+
+    /// Column names to the left of the cells of a stacked table, on the baseline of the cell's first line.
+    private func drawCellLabels(_ ts: NSTextStorage, _ charRange: NSRange, _ origin: NSPoint) {
+        ts.enumerateAttribute(.mdCellLabel, in: charRange) { v, r, _ in
+            guard let info = v as? MDCellLabel, info.text.length > 0 else { return }
+            let gi = glyphIndexForCharacter(at: r.location)
+            guard gi < numberOfGlyphs else { return }
+            let frag = lineFragmentRect(forGlyphAt: gi, effectiveRange: nil)
+            let baseline = location(forGlyphAt: gi).y
+            guard let font = info.text.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else { return }
+            let rect = NSRect(x: origin.x + info.x, y: origin.y + frag.minY + baseline - font.ascender,
+                              width: info.width, height: ceil(font.ascender - font.descender))
+            info.text.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
     }
 
@@ -231,6 +249,7 @@ public final class MarkdownLayoutManager: NSLayoutManager, NSLayoutManagerDelega
         super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         guard let ts = textStorage else { return }
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        drawCellLabels(ts, charRange, origin)
         ts.enumerateAttribute(.mdCheckbox, in: charRange) { v, r, _ in
             guard let checked = (v as? NSNumber)?.boolValue else { return }
             let gi = glyphIndexForCharacter(at: r.location)

@@ -151,6 +151,16 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
         ts.endEditing()
     }
 
+    /// Switches tables between grid and stacked layout when the text column gets wider or narrower.
+    private func restyleTables() {
+        guard let ts = textStorage else { return }
+        let ranges = styler.tablesNeedingLayout(in: ts)
+        guard !ranges.isEmpty else { return }
+        ts.beginEditing()
+        for r in ranges { styler.apply(r, to: ts) }
+        ts.endEditing()
+    }
+
     // MARK: - Incremental styling
 
     public func textStorage(_ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions,
@@ -272,14 +282,16 @@ open class MarkdownTextView: NSTextView, NSTextStorageDelegate {
         let maxWidth = styler.style.maxWidth
         let side = max(28, ((width - maxWidth) / 2).rounded(.down))
         let inset = NSSize(width: side, height: 36)
-        if textContainerInset != inset {
-            textContainerInset = inset
-            let content = max(100, width - side * 2)
-            if abs(styler.contentWidth - content) > 1 {
-                styler.contentWidth = content
-                if styler.analysis.lines.contains(where: { $0.kind == .image }) {
-                    DispatchQueue.main.async { [weak self] in self?.restyleImages() }
-                }
+        if textContainerInset != inset { textContainerInset = inset }
+        // The column width changes even when the side insets stay at their minimum.
+        let content = max(100, width - side * 2)
+        if abs(styler.contentWidth - content) > 1 {
+            styler.contentWidth = content
+            if styler.analysis.lines.contains(where: { $0.kind == .image }) {
+                DispatchQueue.main.async { [weak self] in self?.restyleImages() }
+            }
+            if !styler.analysis.tables.isEmpty {
+                DispatchQueue.main.async { [weak self] in self?.restyleTables() }
             }
         }
     }

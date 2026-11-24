@@ -23,6 +23,14 @@ public extension NSAttributedString.Key {
     static let mdLink = NSAttributedString.Key("md.link")
     /// `MDImageInfo` on the line of a block image.
     static let mdImage = NSAttributedString.Key("md.image")
+    /// On a table pipe that ends a cell line when a wide table is shown as stacked records.
+    static let mdPipeBreak = NSAttributedString.Key("md.pipebreak")
+    /// `MDCellLabel`: column name drawn to the left of a cell in a stacked table.
+    static let mdCellLabel = NSAttributedString.Key("md.celllabel")
+    /// `NSNumber(double)` on the lines of a stacked table: the indent of the cell text.
+    static let mdTableStack = NSAttributedString.Key("md.tablestack")
+    /// `NSNumber(double)` on a table's header line: the width the table needs as a grid.
+    static let mdTableWidth = NSAttributedString.Key("md.tablewidth")
 }
 
 public enum GlyphAction: Int {
@@ -33,8 +41,19 @@ public final class MDTableLineInfo: NSObject {
     public let width: CGFloat
     public let indent: CGFloat
     public let strong: Bool
-    init(width: CGFloat, indent: CGFloat, strong: Bool) {
-        self.width = width; self.indent = indent; self.strong = strong
+    /// Distance of a light separator from the top of the line fragment.
+    public let top: CGFloat
+    init(width: CGFloat, indent: CGFloat, strong: Bool, top: CGFloat = 3) {
+        self.width = width; self.indent = indent; self.strong = strong; self.top = top
+    }
+}
+
+public final class MDCellLabel: NSObject {
+    public let text: NSAttributedString
+    public let x: CGFloat
+    public let width: CGFloat
+    init(text: NSAttributedString, x: CGFloat, width: CGFloat) {
+        self.text = text; self.x = x; self.width = width
     }
 }
 
@@ -322,6 +341,7 @@ public final class MarkdownStyler {
         var revealed: Bool
         var blank: Bool
         var imageHeight: CGFloat
+        var stacked = false
     }
 
     private var paragraphCache: [ParagraphKey: NSParagraphStyle] = [:]
@@ -337,6 +357,11 @@ public final class MarkdownStyler {
         }
         if ln.kind == .body || ln.kind == .heading || ln.kind == .image {
             key.indent = prefixWidth(ln, s)
+        }
+        if ln.kind == .tableHeader || ln.kind == .tableRow, ln.end > ln.start,
+           let indent = s.attribute(.mdTableStack, at: ln.start, effectiveRange: nil) as? NSNumber {
+            key.stacked = true
+            key.indent = CGFloat(indent.doubleValue)
         }
         if ln.kind == .image, let info = s.attribute(.mdImage, at: ln.start, effectiveRange: nil) as? MDImageInfo {
             key.imageHeight = info.size.height
@@ -413,6 +438,12 @@ public final class MarkdownStyler {
             if !key.revealed { collapse(ps, to: 2) }
         case .tableDelimiter:
             if !key.revealed { collapse(ps, to: style.fontSize * 0.5) }
+        case .tableHeader where key.stacked:
+            collapse(ps, to: 1)
+        case .tableRow where key.stacked:
+            ps.firstLineHeadIndent = qi + key.indent
+            ps.headIndent = qi + key.indent
+            ps.paragraphSpacingBefore = stackedRowGap
         case .tableHeader, .tableRow:
             ps.lineHeightMultiple = max(1.4, style.lineHeight)
         case .rule:
@@ -480,7 +511,12 @@ public final class MarkdownStyler {
         var starts = [CGFloat](repeating: 0, count: columns + 1)
         for c in 1...columns { starts[c] = starts[c - 1] + widths[c - 1] + gap }
         let total = starts[columns] - gap
+        s.addAttribute(.mdTableWidth, value: NSNumber(value: Double(total)), range: a.lines[table.firstLine].range)
         if isRevealed(leaf) { return }
+        if total > contentWidth - qi, let header = table.rows.first(where: \.isHeader) {
+            stackTable(table, header: header, qi: qi, s, str)
+            return
+        }
 
         for li in table.firstLine...table.lastLine {
             let ln = a.lines[li]
@@ -497,6 +533,77 @@ public final class MarkdownStyler {
                 s.addAttribute(.mdTableLine, value: MDTableLineInfo(width: total, indent: qi, strong: false), range: ln.range)
             }
         }
+    }
+
+    private var stackedRowGap: CGFloat { (style.fontSize * 0.9).rounded() }
+
+    /// A table too wide for the text column: each row becomes a record of "column name, value"
+    /// lines, so long cells wrap instead of pushing the next columns onto new lines.
+    private func stackTable(_ table: MDTable, header: MDTable.Row, qi: CGFloat, _ s: NSTextStorage, _ str: NSString) {
+        let a = analysis
+        let columns = table.columnCount
+        let available = max(40, contentWidth - qi)
+        let names = (0..<columns).map { c in c < header.cells.count ? visibleText(header.cells[c], s, str) : "" }
+        let gap = spaceWidth * 3
+        let widest = names.map { width(of: $0, font: baseFont) }.max() ?? 0
+        let labelWidth = ceil(min(widest, max(spaceWidth * 6, available * 0.35 - gap)))
+        let indent = labelWidth + gap
+        let truncating = NSMutableParagraphStyle()
+        truncating.lineBreakMode = .byTruncatingTail
+        let labelAttributes: [NSAttributedString.Key: Any] = [.font: baseFont, .foregroundColor: style.theme.secondary,
+                                                              .paragraphStyle: truncating]
+        let labels = names.map { MDCellLabel(text: NSAttributedString(string: $0, attributes: labelAttributes), x: qi, width: labelWidth) }
+
+        s.addAttribute(.mdGlyph, value: GlyphAction.hidden.rawValue, range: a.lines[table.firstLine].range)
+        for li in table.firstLine...table.lastLine {
+            let ln = a.lines[li]
+            guard ln.end > ln.start else { continue }
+            s.addAttribute(.mdTableStack, value: NSNumber(value: Double(indent)), range: ln.range)
+            if ln.kind == .tableDelimiter {
+                s.addAttribute(.mdTableLine, value: MDTableLineInfo(width: available, indent: qi, strong: true), range: ln.range)
+            }
+            guard ln.kind == .tableRow else { continue }
+            if li > table.firstLine + 2 {
+                s.addAttribute(.mdTableLine, value: MDTableLineInfo(width: available, indent: qi, strong: false,
+                                                                    top: (stackedRowGap / 2).rounded()), range: ln.range)
+            }
+            var i = a.firstSpanIndex(atOrAfter: ln.start)
+            while i < a.spans.count, a.spans[i].range.location < ln.end {
+                if case .tablePipe(let c) = a.spans[i].kind, c > 0 {
+                    s.addAttribute(.mdPipeBreak, value: true, range: a.spans[i].range)
+                }
+                i += 1
+            }
+            // The label goes on the cell's first character: the one that starts its line.
+            if let row = table.rows.first(where: { $0.line == li }) {
+                for (c, cell) in row.cells.enumerated() where c < labels.count && cell.length > 0 {
+                    s.addAttribute(.mdCellLabel, value: labels[c], range: NSRange(location: cell.location, length: 1))
+                }
+            }
+        }
+    }
+
+    /// Tables whose grid/stacked choice no longer matches `contentWidth` (after a resize).
+    public func tablesNeedingLayout(in s: NSTextStorage) -> [NSRange] {
+        let a = analysis
+        guard s.length == a.length else { return [] }
+        return a.tables.compactMap { t in
+            let first = a.lines[t.firstLine]
+            guard first.end > first.start, !isRevealed(first.leaf),
+                  let natural = s.attribute(.mdTableWidth, at: first.start, effectiveRange: nil) as? NSNumber else { return nil }
+            let stacked = s.attribute(.mdTableStack, at: first.start, effectiveRange: nil) != nil
+            let needsStack = CGFloat(natural.doubleValue) > contentWidth - quoteIndent(first.quoteDepth)
+            return stacked == needsStack ? nil : NSRange(location: first.start, length: a.lines[t.lastLine].end - first.start)
+        }
+    }
+
+    private func visibleText(_ r: NSRange, _ s: NSTextStorage, _ str: NSString) -> String {
+        var out = ""
+        s.enumerateAttribute(.mdGlyph, in: r) { glyph, sub, _ in
+            if (glyph as? Int) == GlyphAction.hidden.rawValue { return }
+            out += str.substring(with: sub)
+        }
+        return out
     }
 
     /// Width of a cell's visible text (hidden markers excluded).
