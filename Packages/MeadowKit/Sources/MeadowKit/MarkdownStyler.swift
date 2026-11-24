@@ -143,6 +143,10 @@ public final class MarkdownStyler {
                 }
             }
             applyLines(chunkStart...chunkEnd, storage)
+            // Characters the chosen font lacks (Ethiopic, Devanagari, emoji in a mono font) need a
+            // fallback font; without this they are laid out as blank space.
+            let start = a.lines[chunkStart].start
+            storage.fixFontAttribute(in: NSRange(location: start, length: a.lines[chunkEnd].next - start))
             chunkStart = chunkEnd + 1
         }
     }
@@ -518,6 +522,8 @@ public final class MarkdownStyler {
         guard r.length > 0 else { return }
         let code = (s.string as NSString).substring(with: r)
         let colors = style.theme.syntax
+        // Whatever isn't a token (brackets, colons, commas) is punctuation.
+        s.addAttribute(.foregroundColor, value: colors.punctuation, range: r)
         for token in SyntaxHighlighter.tokens(in: code, language: language) {
             let tr = NSRange(location: r.location + token.range.location, length: token.range.length)
             guard NSMaxRange(tr) <= NSMaxRange(r) else { continue }
@@ -533,6 +539,7 @@ public final class MarkdownStyler {
         case .number: return colors.number
         case .type: return colors.type
         case .function: return colors.function
+        case .key: return colors.key
         }
     }
 

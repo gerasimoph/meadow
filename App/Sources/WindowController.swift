@@ -3,6 +3,8 @@ import MeadowKit
 
 private extension NSToolbarItem.Identifier {
     static let settings = NSToolbarItem.Identifier("settings")
+    static let sidebarButton = NSToolbarItem.Identifier("sidebarButton")
+    static let noteTitle = NSToolbarItem.Identifier("noteTitle")
 }
 
 /// One window per root folder (or an empty-state window when `root` is nil).
@@ -17,6 +19,9 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
     private var watcher: FolderWatcher?
     private var popover: NSPopover?
     private var observer: NSObjectProtocol?
+    private let titleField = NSTextField(labelWithString: "")
+    private var toolbarButtons: [NSButton] = []
+    private static let splitName = "MeadowSidebar"
 
     init(root: URL?) {
         self.root = root
@@ -43,13 +48,18 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
             let editorItem = NSSplitViewItem(viewController: editor)
             split.addSplitViewItem(sidebarItem)
             split.addSplitViewItem(editorItem)
-            split.splitView.autosaveName = "MeadowSplit"
+            let restored = UserDefaults.standard.object(forKey: "NSSplitView Subview Frames \(Self.splitName)") != nil
+            split.splitView.autosaveName = Self.splitName
             window.contentViewController = split
             window.setContentSize(NSSize(width: 1000, height: 680))
+            if !restored {
+                split.splitView.layoutSubtreeIfNeeded()
+                split.splitView.setPosition(230, ofDividerAt: 0)
+            }
             window.title = root.lastPathComponent
             wire(sidebar: sidebar, editor: editor)
 
-            let toolbar = NSToolbar(identifier: "MeadowToolbar")
+            let toolbar = NSToolbar(identifier: "MeadowToolbar2")
             toolbar.delegate = self
             toolbar.displayMode = .iconOnly
             window.toolbar = toolbar
@@ -90,7 +100,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
             self.updateTitle()
             self.rememberNote()
         }
-        sidebar.onShowSettings = { [weak self] view in self?.showSettings(from: view) }
+        sidebar.onToggleTheme = { [weak self] in self?.toggleTheme() }
         editor.onOpenLink = { url in (NSApp.delegate as? AppDelegate)?.open(url) }
     }
 
@@ -118,7 +128,15 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
 
     private func updateTitle() {
         guard let root else { return }
-        window?.title = editor?.currentURL?.deletingPathExtension().lastPathComponent ?? root.lastPathComponent
+        let name: String
+        if let url = editor?.currentURL {
+            // Same name as in the sidebar: notes without their extension, source files with it.
+            name = FileNode.sourceLanguage(for: url) == nil ? url.deletingPathExtension().lastPathComponent : url.lastPathComponent
+        } else {
+            name = root.lastPathComponent
+        }
+        window?.title = name
+        titleField.stringValue = editor?.currentURL == nil ? "" : name
     }
 
     private func rememberNote() {
@@ -151,6 +169,8 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
         window?.backgroundColor = theme.background
         editor?.apply(style: style)
         sidebar?.apply(theme: theme)
+        titleField.textColor = theme.secondary
+        toolbarButtons.forEach { $0.contentTintColor = theme.secondary }
         emptyState?.apply(theme: theme)
     }
 
@@ -159,11 +179,21 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
         let p = NSPopover()
         p.behavior = .transient
         p.contentViewController = SettingsViewController()
+        p.appearance = settings.theme.appearance
         p.show(relativeTo: view.bounds, of: view, preferredEdge: .maxY)
         popover = p
     }
 
     @objc private func toolbarSettingsClicked(_ sender: NSButton) { showSettings(from: sender) }
+
+    @objc private func toolbarSidebarClicked(_ sender: NSButton) {
+        (window?.contentViewController as? NSSplitViewController)?.toggleSidebar(sender)
+    }
+
+    /// The sun button in the sidebar: switches between the Moss and Paper themes.
+    private func toggleTheme() {
+        settings.themeID = settings.theme.isDark ? Theme.paper.id : Theme.moss.id
+    }
 
     // MARK: - Menu actions
 
@@ -197,7 +227,7 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
     // MARK: - NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.toggleSidebar, .flexibleSpace, .settings]
+        [.sidebarTrackingSeparator, .sidebarButton, .flexibleSpace, .noteTitle, .flexibleSpace, .settings]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -206,15 +236,39 @@ final class WindowController: NSWindowController, NSWindowDelegate, NSToolbarDel
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier,
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
-        guard id == .settings else { return nil }
         let item = NSToolbarItem(itemIdentifier: id)
-        let image = NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "Settings")
-        let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(toolbarSettingsClicked(_:)))
-        button.bezelStyle = .texturedRounded
-        item.view = button
-        item.label = "Settings"
-        item.toolTip = "Settings"
+        item.isBordered = false
+        switch id {
+        case .settings:
+            item.view = plainButton("slider.horizontal.3", "Settings", #selector(toolbarSettingsClicked(_:)))
+            item.label = "Settings"
+        case .sidebarButton:
+            item.view = plainButton("sidebar.left", "Show or hide the sidebar", #selector(toolbarSidebarClicked(_:)))
+            item.label = "Sidebar"
+        case .noteTitle:
+            titleField.font = .systemFont(ofSize: 13)
+            titleField.lineBreakMode = .byTruncatingMiddle
+            titleField.alignment = .center
+            titleField.textColor = settings.theme.secondary
+            item.view = titleField
+            item.label = "Note"
+        default:
+            return nil
+        }
+        item.toolTip = item.label
         return item
+    }
+
+    /// A borderless icon button, so the title bar shows plain icons rather than glass circles.
+    private func plainButton(_ symbol: String, _ tip: String, _ action: Selector) -> NSButton {
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tip)?
+            .withSymbolConfiguration(.init(pointSize: 15, weight: .regular)) ?? NSImage()
+        let button = NSButton(image: image, target: self, action: action)
+        button.isBordered = false
+        button.toolTip = tip
+        button.contentTintColor = settings.theme.secondary
+        toolbarButtons.append(button)
+        return button
     }
 }
 

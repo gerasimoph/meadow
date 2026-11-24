@@ -60,6 +60,19 @@ final class SourceModeTests: XCTestCase {
         }
     }
 
+    /// Scripts the mono font lacks get a fallback font instead of rendering as blank space.
+    func testMissingGlyphsGetAFallbackFont() {
+        for language in [nil, "json"] as [String?] {
+            let text = language == nil ? "# ትራንስ\n\nYouTube ትራንስ\n" : "{\"m\": \"ትራንስ\"}\n"
+            let (_, ts) = styled(text, language: language)
+            let i = (text as NSString).range(of: "ት").location
+            let font = ts.attribute(.font, at: i, effectiveRange: nil) as! NSFont
+            var unit = (text as NSString).character(at: i)
+            var glyph: CGGlyph = 0
+            XCTAssertTrue(CTFontGetGlyphsForCharacters(font, &unit, &glyph, 1), "\(font.fontName) in \(language ?? "markdown")")
+        }
+    }
+
     func testSameTextAsMarkdownStillRendersMarkdown() {
         let (styler, _) = styled("# Title\n\n**bold**\n", language: nil)
         XCTAssertFalse(styler.analysis.spans.isEmpty)

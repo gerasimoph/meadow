@@ -46,7 +46,7 @@ final class AppSettings {
         let d = UserDefaults.standard
         themeID = d.string(forKey: "theme") ?? Theme.moss.id
         fontName = d.string(forKey: "fontName") ?? ""
-        fontSize = d.object(forKey: "fontSize") as? Double ?? 15
+        fontSize = d.object(forKey: "fontSize") as? Double ?? 13
         lineHeight = d.object(forKey: "lineHeight") as? Double ?? 1.5
         maxWidth = d.object(forKey: "maxWidth") as? Double ?? 680
     }

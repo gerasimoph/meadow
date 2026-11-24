@@ -44,9 +44,18 @@ final class SettingsViewController: NSViewController {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
-        rows.forEach { $0.widthAnchor.constraint(equalToConstant: 288).isActive = true }
-        view = stack
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        rows.forEach { $0.widthAnchor.constraint(equalToConstant: 300).isActive = true }
+        // A plain container with explicit margins: a stack view's own edge insets get lost as a popover's root view.
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: container.topAnchor, constant: 18),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -18),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -20),
+        ])
+        view = container
 
         sync()
         observer = NotificationCenter.default.addObserver(forName: AppSettings.didChange, object: nil, queue: .main) { [weak self] _ in
@@ -72,7 +81,7 @@ final class SettingsViewController: NSViewController {
             value.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
             value.textColor = .secondaryLabelColor
             value.alignment = .right
-            value.widthAnchor.constraint(equalToConstant: 34).isActive = true
+            value.widthAnchor.constraint(equalToConstant: 36).isActive = true
             views.append(value)
         }
         let r = NSStackView(views: views)
@@ -95,6 +104,8 @@ final class SettingsViewController: NSViewController {
         sizeValue.stringValue = String(format: "%.0f", settings.fontSize)
         lineValue.stringValue = String(format: "%.2f", settings.lineHeight)
         widthValue.stringValue = String(format: "%.0f", settings.maxWidth)
+        // Sliders in the theme's accent instead of the system blue.
+        for s in [sizeSlider, lineSlider, widthSlider] { s.trackFillColor = settings.theme.accent }
     }
 
     @objc private func themeChanged() {

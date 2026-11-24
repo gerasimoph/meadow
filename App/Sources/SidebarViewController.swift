@@ -4,6 +4,21 @@ import MeadowKit
 private final class SidebarOutlineView: NSOutlineView {
     var onReturn: (() -> Void)?
     var onTrash: (() -> Void)?
+    /// Extra left inset for disclosure arrows and names, so the list lines up with the folder title.
+    let inset: CGFloat = 16
+
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
+        var r = super.frameOfOutlineCell(atRow: row)
+        if !r.isEmpty { r.origin.x += inset }
+        return r
+    }
+
+    override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
+        var r = super.frameOfCell(atColumn: column, row: row)
+        r.origin.x += inset
+        r.size.width = max(0, r.size.width - inset)
+        return r
+    }
 
     override func keyDown(with event: NSEvent) {
         let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -23,7 +38,23 @@ private final class ThemedRowView: NSTableRowView {
     override func drawSelection(in dirtyRect: NSRect) {
         guard isSelected else { return }
         selectionColor.setFill()
-        NSBezierPath(roundedRect: bounds.insetBy(dx: 6, dy: 1), xRadius: 6, yRadius: 6).fill()
+        NSBezierPath(roundedRect: bounds.insetBy(dx: 11, dy: 1), xRadius: 7, yRadius: 7).fill()
+    }
+}
+
+/// "New note": a filled, rounded button in the bottom bar.
+private final class PillButton: NSButton {
+    var fill: NSColor = .clear { didSet { needsDisplay = true } }
+
+    override var intrinsicContentSize: NSSize {
+        let s = super.intrinsicContentSize
+        return NSSize(width: s.width + 22, height: 30)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        (isHighlighted ? fill.blended(withFraction: 0.15, of: .white) ?? fill : fill).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 7, yRadius: 7).fill()
+        super.draw(dirtyRect)
     }
 }
 
@@ -62,12 +93,14 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     var onWillModify: (() -> Void)?
     var onRenamed: ((URL, URL) -> Void)?
     var onTrashed: ((URL) -> Void)?
-    var onShowSettings: ((NSView) -> Void)?
+    var onToggleTheme: (() -> Void)?
 
     private let outline = SidebarOutlineView()
     private let titleLabel = NSTextField(labelWithString: "")
     private var buttons: [NSButton] = []
-    private var addButton: NSButton!
+    private var addButton: PillButton!
+    private var themeButton: NSButton!
+    private let separator = NSView()
     private var theme = Theme.moss
     private var suppressSelection = false
     private var renaming: FileNode?
@@ -93,10 +126,13 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         titleLabel.lineBreakMode = .byTruncatingTail
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let newNote = iconButton("square.and.pencil", "New Note", #selector(newNoteButton))
-        let header = NSStackView(views: [titleLabel, newNote])
+        let headerSpacer = NSView()
+        headerSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let header = NSStackView(views: [titleLabel, headerSpacer, newNote])
         header.translatesAutoresizingMaskIntoConstraints = false
-        header.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 10)
+        header.edgeInsets = NSEdgeInsets(top: 0, left: 18, bottom: 0, right: 18)
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
         outline.addTableColumn(column)
@@ -104,12 +140,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         outline.headerView = nil
         outline.style = .plain
         outline.indentationPerLevel = 14
-        outline.rowHeight = 26
+        outline.rowHeight = 29
         outline.intercellSpacing = NSSize(width: 0, height: 2)
         outline.dataSource = self
         outline.delegate = self
         outline.allowsEmptySelection = true
         outline.floatsGroupRows = false
+        outline.autoresizesOutlineColumn = false
+        outline.columnAutoresizingStyle = .firstColumnOnlyAutoresizingStyle
+        column.resizingMask = .autoresizingMask
         outline.onReturn = { [weak self] in
             if let node = self?.selectedNode { self?.beginRename(node) }
         }
@@ -124,25 +163,30 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         scroll.documentView = outline
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
 
-        addButton = NSButton(title: " New note", image: symbol("plus", 11), target: self, action: #selector(newNoteButton))
+        addButton = PillButton(title: " New note", image: symbol("plus", 11), target: self, action: #selector(newNoteButton))
         addButton.imagePosition = .imageLeading
+        addButton.imageHugsTitle = true
         addButton.isBordered = false
-        addButton.font = .systemFont(ofSize: 12)
-        buttons.append(addButton)
+        addButton.font = .systemFont(ofSize: 13)
+        addButton.setContentHuggingPriority(.required, for: .horizontal)
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        themeButton = iconButton("sun.max", "Light or dark theme", #selector(themeButtonClicked))
         let bottom = NSStackView(views: [addButton, spacer,
                                          iconButton("folder.badge.plus", "New Folder", #selector(newFolderButton)),
                                          iconButton("tray", "Open Folder…", #selector(openFolderButton)),
-                                         iconButton("gearshape", "Settings", #selector(settingsButton(_:)))])
+                                         themeButton])
         bottom.translatesAutoresizingMaskIntoConstraints = false
-        bottom.spacing = 8
-        bottom.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        bottom.spacing = 14
+        bottom.edgeInsets = NSEdgeInsets(top: 0, left: 11, bottom: 0, right: 16)
+        separator.wantsLayer = true
+        separator.translatesAutoresizingMaskIntoConstraints = false
 
-        for v in [header, scroll, bottom] { background.addSubview(v) }
+        for v in [header, scroll, separator, bottom] { background.addSubview(v) }
         let guide = background.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
             header.topAnchor.constraint(equalTo: guide.topAnchor),
@@ -152,11 +196,15 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
             scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 4),
             scroll.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: bottom.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: separator.topAnchor),
+            separator.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1),
+            separator.bottomAnchor.constraint(equalTo: bottom.topAnchor),
             bottom.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             bottom.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             bottom.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            bottom.heightAnchor.constraint(equalToConstant: 38),
+            bottom.heightAnchor.constraint(equalToConstant: 50),
         ])
         apply(theme: theme)
     }
@@ -167,7 +215,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     }
 
     private func iconButton(_ name: String, _ tip: String, _ action: Selector) -> NSButton {
-        let b = NSButton(image: symbol(name, 13), target: self, action: action)
+        let b = NSButton(image: symbol(name, 14), target: self, action: action)
         b.isBordered = false
         b.toolTip = tip
         buttons.append(b)
@@ -181,8 +229,12 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         outline.backgroundColor = theme.sidebar
         titleLabel.textColor = theme.text
         buttons.forEach { $0.contentTintColor = theme.secondary }
+        separator.layer?.backgroundColor = theme.rule.cgColor
+        addButton.fill = theme.selection.withAlphaComponent(0.6)
+        addButton.contentTintColor = theme.text
         addButton.attributedTitle = NSAttributedString(
-            string: " New note", attributes: [.foregroundColor: theme.secondary, .font: NSFont.systemFont(ofSize: 12)])
+            string: " New note", attributes: [.foregroundColor: theme.text, .font: NSFont.systemFont(ofSize: 13)])
+        themeButton.image = symbol(theme.isDark ? "sun.max" : "moon", 14)
         outline.enumerateAvailableRowViews { row, _ in (row as? ThemedRowView)?.selectionColor = theme.selection.withAlphaComponent(0.6) }
         outline.reloadData()
         refreshTextColors()
@@ -226,8 +278,16 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     private func refreshTextColors() {
         outline.enumerateAvailableRowViews { row, index in
             guard let cell = row.view(atColumn: 0) as? NSTableCellView else { return }
-            cell.textField?.textColor = row.isSelected ? theme.text : theme.secondary
+            style(cell.textField, node: outline.item(atRow: index) as? FileNode, selected: row.isSelected)
         }
+    }
+
+    /// Selected row: bright and medium weight. Folders are a little brighter than files.
+    private func style(_ field: NSTextField?, node: FileNode?, selected: Bool) {
+        guard let field else { return }
+        let folder = theme.text.blended(withFraction: 0.5, of: theme.secondary) ?? theme.text
+        field.textColor = selected ? theme.heading : (node?.isFolder == true ? folder : theme.secondary)
+        field.font = .systemFont(ofSize: 13, weight: selected ? .medium : .regular)
     }
 
     // MARK: - Data source
@@ -254,7 +314,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
         }()
         cell.textField?.stringValue = node.name
         let row = outlineView.row(forItem: node)
-        cell.textField?.textColor = row >= 0 && outlineView.isRowSelected(row) ? theme.text : theme.secondary
+        style(cell.textField, node: node, selected: row >= 0 && outlineView.isRowSelected(row))
         return cell
     }
 
@@ -299,7 +359,7 @@ final class SidebarViewController: NSViewController, NSOutlineViewDataSource, NS
     @objc private func newNoteButton() { newItem(isFolder: false, near: selectedNode) }
     @objc private func newFolderButton() { newItem(isFolder: true, near: selectedNode) }
     @objc private func openFolderButton() { NSApp.sendAction(#selector(AppDelegate.openDocument(_:)), to: nil, from: self) }
-    @objc private func settingsButton(_ sender: NSButton) { onShowSettings?(sender) }
+    @objc private func themeButtonClicked() { onToggleTheme?() }
 
     func newNote() { newItem(isFolder: false, near: selectedNode) }
     func newFolder() { newItem(isFolder: true, near: selectedNode) }

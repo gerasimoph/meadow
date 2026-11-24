@@ -1,7 +1,7 @@
 import Foundation
 
 public struct CodeToken {
-    public enum Kind { case keyword, string, comment, number, type, function }
+    public enum Kind { case keyword, string, comment, number, type, function, key }
     /// Range relative to the code string passed in (UTF-16).
     public var range: NSRange
     public var kind: Kind
@@ -367,7 +367,7 @@ private struct CodeScanner {
                 var kind = CodeToken.Kind.string
                 if r.jsonKeys {
                     let k = skipBlanks(j)
-                    if k < n && s[k] == 58 { kind = .type }
+                    if k < n && s[k] == 58 { kind = .key }
                 }
                 emit(i, j, kind); i = j; continue
             }

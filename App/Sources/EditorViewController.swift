@@ -10,6 +10,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     private let scrollView: NSScrollView
     private let textView: MarkdownTextView
     private let emptyLabel = NSTextField(labelWithString: "No note selected")
+    private let fade = FadeView()
     private var lastText = ""
     private var encoding = String.Encoding.utf8
     private var dirty = false
@@ -30,13 +31,19 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         emptyLabel.font = .systemFont(ofSize: 14)
+        fade.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(scrollView)
+        root.addSubview(fade)
         root.addSubview(emptyLabel)
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: root.topAnchor),
             scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            fade.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            fade.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            fade.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -16),
+            fade.heightAnchor.constraint(equalToConstant: 56),
             emptyLabel.centerXAnchor.constraint(equalTo: root.centerXAnchor),
             emptyLabel.centerYAnchor.constraint(equalTo: root.centerYAnchor),
             root.widthAnchor.constraint(greaterThanOrEqualToConstant: 360),
@@ -57,12 +64,14 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.style = style
         view.layer?.backgroundColor = style.theme.background.cgColor
         emptyLabel.textColor = style.theme.secondary
+        fade.color = style.theme.background
     }
 
     func focus() { view.window?.makeFirstResponder(textView) }
 
     private func showEmptyState(_ empty: Bool) {
         scrollView.isHidden = empty
+        fade.isHidden = empty
         emptyLabel.isHidden = !empty
     }
 
@@ -204,5 +213,36 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         scrollView.contentView.scroll(to: origin)
         scrollView.reflectScrolledClipView(scrollView.contentView)
         return true
+    }
+}
+
+/// Text fades out at the bottom edge of the editor. Clicks pass through.
+private final class FadeView: NSView {
+    private let gradient = CAGradientLayer()
+    var color: NSColor = .clear { didSet { update() } }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.addSublayer(gradient)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        gradient.frame = bounds
+        CATransaction.commit()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    private func update() {
+        // Layer-backed views are flipped bottom-up: start point (0) is the bottom edge.
+        gradient.colors = [color.cgColor, color.withAlphaComponent(0).cgColor]
+        gradient.startPoint = CGPoint(x: 0.5, y: 0)
+        gradient.endPoint = CGPoint(x: 0.5, y: 1)
     }
 }

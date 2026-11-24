@@ -24,6 +24,10 @@ public struct Theme: Equatable {
         public var number: NSColor
         public var type: NSColor
         public var function: NSColor
+        /// Object keys in JSON.
+        public var key: NSColor
+        /// Brackets, colons and commas in JSON source files.
+        public var punctuation: NSColor
     }
 
     public var appearance: NSAppearance? { NSAppearance(named: isDark ? .darkAqua : .aqua) }
@@ -37,11 +41,12 @@ private func hex(_ v: UInt32, _ a: CGFloat = 1) -> NSColor {
 public extension Theme {
     static let moss = Theme(
         id: "moss", name: "Moss", isDark: true,
-        background: hex(0x1F271C), sidebar: hex(0x283224), text: hex(0xE4E7DC), secondary: hex(0x8A9682),
-        heading: hex(0xF2F4EC), accent: hex(0xA9D18E), codeBackground: hex(0x2A3426), codeText: hex(0xDDE3D2),
-        rule: hex(0x3E4A38), selection: hex(0x4B5E40),
-        syntax: .init(keyword: hex(0xD7A86E), string: hex(0xA9D18E), comment: hex(0x7A8672),
-                      number: hex(0xE0C27A), type: hex(0x8EC5C0), function: hex(0xC8B6E2)))
+        background: hex(0x22261F), sidebar: hex(0x2A2F26), text: hex(0xE6E8DE), secondary: hex(0xA4AA98),
+        heading: hex(0xF2F4EA), accent: hex(0xA8C98A), codeBackground: hex(0x2B3028), codeText: hex(0xDDE0D4),
+        rule: hex(0x353B2F), selection: hex(0x474F40),
+        syntax: .init(keyword: hex(0xD7A86E), string: hex(0xA8C98A), comment: hex(0x7C8272),
+                      number: hex(0xE8A867), type: hex(0x8EC5C0), function: hex(0xC8B6E2),
+                      key: hex(0xC9D9B4), punctuation: hex(0x8E9584)))
 
     static let graphite = Theme(
         id: "graphite", name: "Graphite", isDark: true,
@@ -49,7 +54,8 @@ public extension Theme {
         heading: hex(0xF4F4F6), accent: hex(0x8AB4F8), codeBackground: hex(0x26272B), codeText: hex(0xDCDCE0),
         rule: hex(0x3A3B40), selection: hex(0x3D4B63),
         syntax: .init(keyword: hex(0xF28FAD), string: hex(0xA6DA95), comment: hex(0x6E7079),
-                      number: hex(0xF5A97F), type: hex(0x7DC4E4), function: hex(0xC6A0F6)))
+                      number: hex(0xF5A97F), type: hex(0x7DC4E4), function: hex(0xC6A0F6),
+                      key: hex(0x7DC4E4), punctuation: hex(0x8B8C92)))
 
     static let paper = Theme(
         id: "paper", name: "Paper", isDark: false,
@@ -57,7 +63,8 @@ public extension Theme {
         heading: hex(0x1A1916), accent: hex(0x2F6E4F), codeBackground: hex(0xF0EEE6), codeText: hex(0x34332E),
         rule: hex(0xDDD9CC), selection: hex(0xCFE3D2),
         syntax: .init(keyword: hex(0xA2471F), string: hex(0x2F6E4F), comment: hex(0x9A968A),
-                      number: hex(0x8A5A00), type: hex(0x1F5F8B), function: hex(0x6B3FA0)))
+                      number: hex(0x8A5A00), type: hex(0x1F5F8B), function: hex(0x6B3FA0),
+                      key: hex(0x1F5F8B), punctuation: hex(0x8E8B80)))
 
     static let all: [Theme] = [.moss, .graphite, .paper]
 
@@ -74,7 +81,7 @@ public struct EditorStyle: Equatable {
     /// Maximum width of the text column, in points.
     public var maxWidth: CGFloat
 
-    public init(theme: Theme = .moss, fontName: String = "", fontSize: CGFloat = 15,
+    public init(theme: Theme = .moss, fontName: String = "", fontSize: CGFloat = 13,
                 lineHeight: CGFloat = 1.5, maxWidth: CGFloat = 680) {
         self.theme = theme
         self.fontName = fontName
